@@ -2,7 +2,7 @@
 # never used for parameter selection.
 
 dataset:
-  # random_walk | planted_frs | raw (vendor parquet under data/parquet)
+  # random_walk | planted_frs | yahoo_1h | yahoo_30m | dukascopy_m30 | raw
   default: random_walk
   start: "2021-01-01"
   end: "2022-12-31"
@@ -14,6 +14,20 @@ suites:
     - cost_0
     - cost_2
     - cost_3
+    - holdout
+  # Proxy-market battery: frozen baseline + cost + alt definitions + holdout.
+  # Alt definitions never overwrite the frozen baseline.
+  hard:
+    - baseline
+    - cost_0
+    - cost_2
+    - cost_3
+    - delay_2bars
+    - reversal
+    - prior_session
+    - overnight
+    - oat_energy
+    - walkforward
     - holdout
   standard:
     - baseline
@@ -131,3 +145,23 @@ scenarios:
   holdout:
     description: Single evaluation on the reserved final holdout
     mode: holdout
+
+  reversal:
+    description: NEW hypothesis — fade a spent-energy rejection of the rolling boundary
+    definition_id: frs_reversal_v1
+    signal:
+      kind: reversal
+
+  prior_session:
+    description: NEW hypothesis — continuation through prior-session high/low
+    definition_id: frs_prior_session_v1
+    signal:
+      kind: continuation
+      boundary: prior_session
+
+  overnight:
+    description: NEW hypothesis — continuation through overnight extremes
+    definition_id: frs_overnight_v1
+    signal:
+      kind: continuation
+      boundary: overnight

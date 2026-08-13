@@ -349,7 +349,14 @@ def synthesize(
             by_inst[micro] = _bars(micro, sspec.tick_size)
 
     if out_dir is not None:
-        write_bars_parquet(by_inst, out_dir, scenario=scenario, seed=seed)
+        write_bars_parquet(
+            by_inst,
+            out_dir,
+            scenario=scenario,
+            seed=seed,
+            start=start.isoformat(),
+            end=end.isoformat(),
+        )
     return by_inst
 
 
@@ -359,6 +366,8 @@ def write_bars_parquet(
     *,
     scenario: str,
     seed: int,
+    start: str | None = None,
+    end: str | None = None,
 ) -> Path:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -392,6 +401,8 @@ def write_bars_parquet(
     meta = {
         "scenario": scenario,
         "seed": seed,
+        "start": start,
+        "end": end,
         "instruments": sorted(by_inst),
         "rows": {k: len(v) for k, v in by_inst.items()},
         "generator": "src/data/synthetic.py",

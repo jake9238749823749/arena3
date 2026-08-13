@@ -36,3 +36,12 @@ def test_random_walk_positive_is_leakage_alarm():
 def test_planted_positive_is_but_bad_holdout():
     c = conclude_from_suite(_summary("planted_frs", 20.0, holdout_exp=-5.0, cost2=10.0))
     assert c["verdict"] == "DETECTS_PLANT_NOT_SELECTIVE"
+
+
+def test_planted_window_positive_overall_negative():
+    summary = _summary("planted_frs", -10.0, holdout_exp=-5.0, cost2=-12.0)
+    summary["cases"][0]["segments"] = {
+        "entry_0930_1100": {"n": 80, "expectancy": 40.0, "net": 3200.0},
+    }
+    c = conclude_from_suite(summary)
+    assert c["verdict"] == "DETECTS_PLANT_NOT_SELECTIVE"

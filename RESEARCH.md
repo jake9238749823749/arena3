@@ -1,169 +1,157 @@
-# FRS research conclusion
+# FRS research conclusion (phase 2)
 
 **Date:** 2026-08-12
-**Definition:** `frs_baseline_v1` (QuantConnect prototype, frozen)
-**Engine:** `0.1.0` (this repository — not LEAN / QC / Backtrader / Nautilus)
-**Data:** synthetic only. Real dated GC/ES/NQ and MGC/MES/MNQ bars were not supplied.
+**Engine:** `0.2.0`
+**Frozen definition:** `frs_baseline_v1` (unchanged)
+**New candidate definitions (separate IDs, never silently swapped in):**
+`frs_reversal_v1`, `frs_prior_session_v1`, `frs_overnight_v1`
 
-This document is the scientific record. Pretty equity curves are not the criterion.
-The criterion is whether FRS keeps economically meaningful expectancy after
-realistic execution, costs, rolls, perturbation, segmentation, walk-forward,
-and a reserved holdout.
+This phase pushed the falsification program harder: four years of GBM,
+two years of RTH-planted paths, bootstrap CIs, regime/session slices,
+and three neighboring *mechanisms* (not just neighboring thresholds).
+Public Yahoo/Dukascopy fetchers are in the tree; this sandbox's outbound
+TLS is blocked, so they were not able to land tape here.
 
 ## Verdict
 
-| Dataset | What it is for | Verdict |
+| Dataset | Span | Verdict |
 | --- | --- | --- |
-| `random_walk` (seed 42, 2021–2022) | Leakage / free-lunch test | **FALSIFIED_ON_RANDOM_WALK** |
-| `planted_frs` (seed 7, 2021-01–2022-06, RTH plants) | Implementation check | **DETECTS_PLANT_NOT_SELECTIVE** |
-| Real CME tape | The actual hypothesis | **NOT RUN** — drop dated contract bars into `data/raw/` |
+| `random_walk` seed 42 | 2020–2023 (223 536 IS bar-rows) | **FALSIFIED_ON_RANDOM_WALK** |
+| `planted_frs` seed 7 | 2021–2022 | **DETECTS_PLANT_NOT_SELECTIVE** |
+| `frs_reversal_v1` on GBM | 2020–2023 | **Dead.** 1 013 trades, −$10.74 expectancy |
+| `frs_prior_session_v1` on GBM | 2020–2023 | **Noise.** +$5.47, bootstrap CI crosses 0 |
+| `frs_overnight_v1` on GBM | 2020–2023 | **Dead.** −$12.54 expectancy |
+| Dated CME GC/ES/NQ + micros | — | **NOT RUN** |
 
-There is **no evidence** in this repository that FRS is an economically
-exploitable effect in gold or equity-index futures. There **is** evidence that:
+There is still **no economically defensible futures claim**. There is a
+sharper statement about the code path.
 
-1. The engine is not printing a free lunch on GBM after the canonical 1-tick cost.
-2. The frozen rule *can* harvest a stored-energy breakout when that pattern is
-   planted inside the 09:30–11:30 ET window and given room to run before 15:45.
-3. The same frozen rule also takes lookalike breakouts. A reserved holdout on
-   the planted series goes negative. The executable definition is not selective
-   enough to be called a mechanism, even in a world where we cheated for it.
+## What phase 2 added
 
-## What was frozen
+- `frs fetch --source yahoo_1h|yahoo_30m|dukascopy_m30` writes an immutable
+  raw dump and a parquet tree stamped `PROXY_NOT_DATED_FUTURES`.
+- Signal kinds `continuation` / `reversal` and boundaries `rolling_n` /
+  `prior_session` / `overnight`. Changing any of these bumps `definition_id`.
+- IID bootstrap on trade expectancy (2.5/97.5 CI, P(mean>0), t-stat).
+- Segments: long/short, energy, compression terciles, 09:30–11:00 vs 11:00–13:00.
+- Suite `hard`: costs + delay + the three new definitions + energy OAT +
+  walk-forward + holdout.
 
-Port of the supplied QuantConnect algorithm, with every missing assumption written down:
+## 4-year random walk (leakage test, n larger)
 
-- \(E = (close-open)/(high-low)\)
-- Compression = short ATR(6) / long ATR(48)
-- Boundary = max high / min low of the prior 12 bars; **current bar excluded**
-- Long if close > upper and \(E \ge 0.65\) after compression < 0.75; short symmetric
-- Simultaneous candidates ranked by \( |E| \cdot (\text{distance}/\text{ATR}) \cdot (1-\text{compression}) \)
-- One shared portfolio, one position
-- Signals from GC/ES/NQ; fills on MGC/MES/MNQ
-- Risk 25 bps of equity, notional cap 1×, stop 1.0 ATR, target 2.0 ATR, time stop 8 bars
-- Entries 09:30–13:00 America/New_York, flatten 15:45
-- Next completed bar’s **open** + 1 adverse tick; same-bar stop+target → stop wins
-- Continuous series is signal-only. Execution uses dated contracts. Roll gaps are real.
+Frozen baseline, 1-tick slippage, 82 trades in ~3.2 IS years.
 
-With only 30-minute bars, next-bar open is more conservative than the original
-next-minute QC fill. Feed 1-minute bars if you want QC-like delay.
-
-## Engine correctness
-
-`pytest` (54 tests, including Hypothesis) covers:
-
-- No fill on the signal bar; every non-protective fill has `fill.ts > submitted_ts`
-- A future monster bar does not create earlier entries
-- Same-bar OCO: stop fills, target canceled, trade marked ambiguous
-- Cash identity: `cash = start + realized − commissions`
-- MES P&L is `qty × points × $5` (tick value = multiplier × tick size)
-- Cancel / replace leave no phantom position
-- Scheduled rolls close the old dated contract and open the new one
-- Identical inputs replay to identical fills and equity
-- More slippage never improves an entry fill
-- Holdout is the final time-fraction and does not overlap IS
-- Sizing is not imported by the signal module
-
-Those tests are the reason the random-walk result is interpretable. If the
-baseline had been profitable on GBM after 1 tick, we would have treated it as
-a leak, not as alpha.
-
-## Random walk battery (primary falsification)
-
-Span 2021-01-01 → 2022-12-31, seed 42, 111 768 IS bar-rows / 27 948 holdout.
-~23k 30-minute Globex bars per instrument. Frozen baseline, no fitting.
-
-| case | n | expectancy $ | net $ | notes |
-| --- | ---: | ---: | ---: | --- |
-| baseline (1 tick) | 32 | −13.46 | −431 | canonical model |
-| cost_0 | 32 | +8.08 | +259 | optimistic bound; noise, not a claim |
-| cost_2 | 32 | −16.56 | −530 | |
-| cost_3 | 32 | −32.79 | −1 049 | |
-| cost_5 | 32 | −39.36 | −1 260 | |
-| 3× commission | 32 | −23.67 | −757 | |
-| delay 2 / 3 bars | 32 | +0.51 / +4.94 | small + | small-sample noise; not an edge |
-| roll 5d / 10d | 32 | −13.46 | −431 | daily flat ⇒ rolls almost never while in a trade |
-| front-contract signals | 32 | −13.41 | −429 | same conclusion |
-| holdout (untouched) | 8 | −128.61 | −1 029 | reserved 20% tail |
-
-One-at-a-time neighbors **flip sign** (energy 0.70, compression 0.80/0.90,
-stop 0.75/1.5). That is the opposite of a broad stable region. Several of
-those cells have n < 20. Walk-forward test folds are 7, 4, 4, 2 trades.
-
-**Why it fails:** after a realistic taker tick, 32 GBM lookalikes are a coin
-flip with a fee. Zero slippage can print a small plus by chance. Raising
-energy or loosening compression sometimes lucks into a plus — that is
-multiple testing, which is why those cells are not promoted and why they
-never touch the holdout.
-
-**Small sample** is itself a finding: the frozen gate is rare. A rare rule
-on two years of 30-minute bars cannot support an economic claim even if
-the point estimate had been positive.
-
-## Planted mechanism (implementation check)
-
-After an earlier planter that fired overnight (and was correctly flattened
-or rejected) produced a false “implementation miss,” plants were restricted
-to 09:30–11:30 ET with several bars of one-sided continuation before 15:45.
-
-IS (through 2022-03, 20% holdout reserved):
-
-| case | n | expectancy $ | net $ | win rate |
+| case | n | exp $ | net $ | P(mean>0) |
 | --- | ---: | ---: | ---: | ---: |
-| baseline 1 tick | 356 | +28.15 | +10 023 | 0.660 |
-| cost_0 | 365 | +31.51 | +11 502 | 0.660 |
-| cost_2 | 351 | +21.40 | +7 512 | 0.655 |
-| cost_3 | 347 | +17.64 | +6 121 | 0.654 |
-| holdout | 89 | −57.83 | −5 147 | 0.596 |
+| baseline 1 tick | 82 | −1.75 | −144 | 0.47 |
+| cost_0 | 82 | +3.66 | +300 | 0.55 |
+| cost_2 | 82 | −6.29 | −515 | 0.40 |
+| cost_3 | 82 | −24.35 | −1 997 | 0.15 |
+| delay +1 bar | 82 | +5.24 | +430 | 0.56 |
+| holdout (untouched) | 23 | +32.77 | +754 | 0.77 |
 
-So: the stack *does* what the frozen definition says, and costs do not
-erase a *true* stored-energy continuation that occurs in the entry window.
-The reserved tail still loses, because the rule also takes unplanted
-lookalikes and is not a filter for “this bar was planted.”
+Bootstrap 95% CI on the baseline is **[−52, +46]**. The point estimate is
+a coin flip with a fee. A lucky holdout on GBM is not a holdout win —
+the IS book is negative and 2-tick costs make it worse. Energy OAT still
+flips sign (0.55/0.60/0.75 print pluses; 0.65/0.70 do not). 0.75 has
+**nine** trades. That is multiple testing, which is why those cells are
+not promoted and never touch the holdout.
 
-A hand-built 49-bar fixture in `tests/test_frs.py` independently shows the
-first fill is the planted breakout, on the micro, on the next bar, never
-on the signal bar.
+Walk-forward: 10 test folds, most of them small-n coin flips with mixed
+sign. Flagged `WALKFORWARD_WEAK`.
 
-## What would have counted as survival
+**By instrument (baseline):** MGC +$410 / MES −$238 / MNQ −$315.
+**By side:** longs +$320, shorts −$464.
 
-Not a pretty IS curve. Survival on **real** tape would have required:
+No leakage money machine after one tick. The engine is still usable.
 
-- Expectancy > 0 at 2+ adverse ticks and listed (then stressed) commissions
-- A broad, same-sign neighborhood of thresholds — not isolated cells
-- Walk-forward test folds not dominated by a handful of trades
-- Untouched holdout still positive
-- P&L not concentrated in 5 winners or one instrument
-- Rolls and continuous-vs-front signal choice not driving the result
+## Neighboring mechanisms on the same 4-year GBM
 
-None of that is available here for GC/ES/NQ. The random-walk battery fails
-those tests in the direction a non-leaking engine should. The planted
-battery passes cost stress and fails selectivity / holdout.
+These are **new hypotheses**, not patches to `frs_baseline_v1`.
 
-## Smallest defensible statement
+| definition | n | exp $ | net $ | 95% CI | P(mean>0) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `frs_reversal_v1` fade a spent-energy rejection | 1 013 | −10.74 | −10 883 | [−23.5, +2.7] | 0.05 |
+| `frs_prior_session_v1` prior-session H/L | 94 | +5.47 | +514 | [−40, +53] | 0.59 |
+| `frs_overnight_v1` overnight extremes | 56 | −12.54 | −702 | [−69, +46] | 0.32 |
 
-> If price compresses, then prints a high-energy close through the prior
-> N-bar boundary *and that move actually continues for the next several
-> 30-minute bars inside the New York day*, the frozen executable rule can
-> capture some of it on the micro after one adverse tick.
+Reversal is the other half of the original story. On GBM it over-trades
+and loses. Prior-session is a small plus whose CI includes large losses.
+Overnight does not pay. None of these is a candidate for promotion.
+
+## 2-year planted RTH paths (implementation + selectivity)
+
+Plants fire only 09:30–11:30 ET and then run one-sided for several bars
+so a 2-ATR target can complete before the 15:45 flat.
+
+**Headline book is negative:** 487 trades, −$18.69 expectancy, −$9 102,
+61% win rate. Holdout −$9.02 (n=121). Costs do not save it.
+
+That is **not** an implementation miss. The slices say where the money is:
+
+| slice | n | exp $ | net $ | win rate |
+| --- | ---: | ---: | ---: | ---: |
+| entry 09:30–11:00 (plant window) | 236 | **+136.5** | **+$32 215** | 0.822 |
+| entry 11:00–13:00 (lookalikes) | 189 | −73.4 | −$13 874 | 0.534 |
+| \|E\| ≥ 0.80 | 329 | **+141.2** | **+$46 455** | 0.839 |
+| 0.65 ≤ \|E\| < 0.80 | 158 | −351.6 | −$55 556 | 0.146 |
+| compression tercile mid | 165 | +223.3 | +$36 847 | 0.976 |
+| compression tercile high | 161 | −345.3 | −$55 594 | 0.168 |
+
+The frozen 09:30–13:00 gate is too wide. The frozen energy floor of 0.65
+is too low. The rule *does* harvest a stored-energy continuation when
+that is what the bar actually is. It also takes a second population of
+lookalikes that have worse expectancy than a coin flip, and those
+dominate the book once the sample is long enough for them to accumulate.
+
+`delay_2bars` on this planted series prints +$59.5 expectancy / +$24 522.
+That is a **planter artifact** (the injected continuation lasts ~7 bars,
+so waiting one extra bar still catches it and skips some junk). It is
+not a reason to change the frozen delay. We do not promote it.
+
+`frs_reversal_v1` on planted is ~flat (−$0.32). It is not the planted
+mechanism. Prior-session and overnight do not harvest the plant either.
+
+## Smallest defensible statement (still not a market fact)
+
+> If a compressed range is followed by a **high-energy** close through
+> the prior-N-bar boundary **in the morning session**, and price then
+> actually continues for the next several 30-minute bars, the executable
+> pipeline (next-bar micro, 1 adverse tick, ATR bracket, 15:45 flat)
+> can capture some of that move.
 >
-> That is a description of the code path. It is not a market fact.
-> Lookalikes without continuation are taken too. On GBM they lose after
-> costs. On real futures we do not know.
+> The frozen QC gate (E ≥ 0.65, entries through 13:00, no further
+> quality filter) is **not selective enough** to keep that population
+> from being drowned by lookalikes. On GBM the whole book is a coin
+> flip after one tick. On a two-year planted series the morning plant
+> window is hugely positive and the rest of the day sinks the account.
+>
+> Dated CME tape has not been measured. Reversal-after-spent-energy,
+> prior-session levels, and overnight extremes are separate hypotheses
+> and do not help on GBM.
 
-Reversal-after-spent-energy was **not** implemented. The QC prototype only
-encodes continuation-after-stored-energy. Treating reversal as part of
-“FRS” would be a new `definition_id`.
+Tightening energy to 0.80 or cutting the entry window to 09:30–11:00
+would be a **new** `definition_id`. It would also be fitting the planter.
+That is not allowed to touch the holdout and is not a result.
 
-## Next measurement (the only one that matters)
+## Real tape
 
-1. Ingest dated contract bars (not continuous Yahoo) for GC, MGC, ES, MES,
-   NQ, MNQ into `data/raw/` and run `frs ingest`.
-2. Do not touch `config/strategy.yaml` except to bump `definition_id` if
-   you intentionally change the hypothesis.
-3. `frs robustness --suite standard --dataset raw`
-4. Read `runs/REPORT.md`. If it dies at 2 ticks, stop. If a neighbor is
-   the only profitable cell, stop. If holdout is the first time you look
-   at the tail, you are doing it right.
+`frs fetch` is the next measurement, on a machine that can open TLS to
+Yahoo or Dukascopy (or, better, a vendor of *dated* GC/MGC/ES/MES/NQ/MNQ
+bars dropped into `data/raw/`).
 
-Until that file exists, FRS is an untested market story sitting on a
-tested engine.
+```bash
+frs fetch --source yahoo_1h          # continuous futures, ~2y hourly
+frs fetch --source yahoo_30m         # continuous futures, ~60d 30-minute
+frs fetch --source dukascopy_m30     # spot/index CFD, longer M30
+frs robustness --suite hard --dataset yahoo_1h
+```
+
+Those sources are **proxies**. Survival on them would still not be a
+micro-futures trading claim. Failure on them would be evidence against
+the price-path story itself.
+
+Until dated contract bars exist in `data/parquet/`, FRS remains an
+untested market story sitting on a tested engine, with a tested
+observation that the frozen gate is too loose even when the mechanism
+is injected by hand.

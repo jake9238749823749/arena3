@@ -87,3 +87,5 @@ changes as execution assumptions worsen (0, 1, 2, 3+ adverse ticks).
 | First ATR sample | High-low only (no prior close), matching QC prototype | Frozen baseline fidelity |
 | Overnight signal bars | Included in ATR/boundary; entries still RTH-gated | Matches prototype consolidator |
 | Simultaneous candidates | Max score, others recorded as rejected | Opportunity cost is research data |
+| Reversal / prior-session / overnight | Separate `definition_id`s, never overwrite baseline | New hypotheses, not bugfixes |
+| Yahoo / Dukascopy | Proxy price paths only; stamp `PROXY_NOT_DATED_FUTURES` | Not dated CME tape |

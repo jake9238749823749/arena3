@@ -1,7 +1,7 @@
 # Frozen baseline FRS definition.
 # Changing these values is a new hypothesis — bump definition_id.
 definition_id: frs_baseline_v1
-engine_version: "0.1.0"
+engine_version: "0.2.0"
 description: >
   QuantConnect-ported Frontier Resolution Switch. Compression (stored energy)
   plus a high-|E| close through a prior-N-bar boundary is treated as
@@ -30,6 +30,10 @@ signal:
   energy_threshold: 0.65
   # Exclude the forming/breakout bar from ATR and boundary inputs.
   exclude_current_bar: true
+  # continuation | reversal   (reversal is a different definition_id)
+  kind: continuation
+  # rolling_n | prior_session | overnight
+  boundary: rolling_n
 
 execution:
   # Signals from GC/ES/NQ; fills on the mapped micro.

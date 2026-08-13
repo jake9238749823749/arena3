@@ -21,6 +21,11 @@ def main(argv: list[str] | None = None) -> int:
     p_syn.add_argument("--end", default="2022-12-31")
     p_syn.add_argument("--out", default=None)
 
+    p_ft = sub.add_parser("fetch", help="Download public proxy market paths (Yahoo / Dukascopy)")
+    p_ft.add_argument("--source", required=True, choices=["yahoo_1h", "yahoo_30m", "dukascopy_m30"])
+    p_ft.add_argument("--start", default="2021-01-01")
+    p_ft.add_argument("--end", default="2024-12-31")
+
     p_ing = sub.add_parser("ingest", help="Normalize data/raw into data/parquet (raw is immutable)")
     p_ing.add_argument("--raw", default=str(repo_root() / "data" / "raw"))
     p_ing.add_argument("--out", default=str(repo_root() / "data" / "parquet" / "vendor"))
@@ -50,6 +55,21 @@ def main(argv: list[str] | None = None) -> int:
     p_rep.add_argument("--run", default=None, help="latest | path to a run dir")
 
     args = parser.parse_args(argv)
+
+    if args.cmd == "fetch":
+        from data.fetch_market import fetch_and_store
+        from futures.contracts import InstrumentRegistry
+
+        registry = InstrumentRegistry.from_yaml(repo_root() / "config" / "instruments.yaml")
+        dest = fetch_and_store(
+            args.source,
+            repo=repo_root(),
+            registry=registry,
+            start=args.start,
+            end=args.end,
+        )
+        print(json.dumps({"out": str(dest), "source": args.source}, indent=2))
+        return 0
 
     if args.cmd == "synthesize":
         from data.synthetic import synthesize

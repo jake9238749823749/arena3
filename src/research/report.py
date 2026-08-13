@@ -94,6 +94,13 @@ def conclude_from_suite(summary: dict[str, Any]) -> dict[str, Any]:
         flags.append("EDGE_ON_RANDOM_WALK")
     if dataset in {"random_walk", "planted_frs"}:
         flags.append("SYNTHETIC_DATA_ONLY")
+    if dataset in {"yahoo_1h", "yahoo_30m", "dukascopy_m30"} or str(dataset).startswith("yahoo") or str(dataset).startswith("dukascopy"):
+        flags.append("PROXY_NOT_DATED_FUTURES")
+    boot = baseline.get("bootstrap") or {}
+    if boot.get("ci_high") is not None and float(boot["ci_high"]) <= 0:
+        flags.append("BOOTSTRAP_CI_NONPOSITIVE")
+    if boot.get("ci_low") is not None and float(boot["ci_low"]) > 0 and exp > 0:
+        flags.append("BOOTSTRAP_CI_EXCLUDES_ZERO")
 
     if dataset == "random_walk":
         if "EDGE_ON_RANDOM_WALK" in flags:
@@ -117,13 +124,28 @@ def conclude_from_suite(summary: dict[str, Any]) -> dict[str, Any]:
     elif dataset == "planted_frs":
         holdout_bad = "HOLDOUT_NONPOSITIVE" in flags
         costs_ok = not any(f.startswith("DIES_AT_COST") for f in flags)
-        if exp <= 0:
+        segs = baseline.get("segments") or {}
+        plant_win = segs.get("entry_0930_1100") or {}
+        harvested = float(plant_win.get("expectancy") or 0) > 0 and int(plant_win.get("n") or 0) >= 20
+        if exp <= 0 and not harvested:
             verdict = "IMPLEMENTATION_MISS"
             why = (
                 "A planted stored-energy breakout in the entry window was not "
                 "harvested. The executable rule or the planter is wrong."
             )
             smallest = None
+        elif exp <= 0 and harvested:
+            flags.append("PLANT_WINDOW_POSITIVE_OVERALL_NEGATIVE")
+            verdict = "DETECTS_PLANT_NOT_SELECTIVE"
+            why = (
+                "The 09:30–11:00 plant window is profitable, but lookalike "
+                "breakouts elsewhere (and/or later in the day) wipe the book. "
+                "The frozen rule can see the mechanism and is not selective enough."
+            )
+            smallest = (
+                "High-|E| acceptance after compression, next-bar micro, "
+                "restricted to the morning plant window — not the full 09:30–13:00 gate."
+            )
         elif holdout_bad:
             verdict = "DETECTS_PLANT_NOT_SELECTIVE"
             why = (
@@ -160,21 +182,34 @@ def conclude_from_suite(summary: dict[str, Any]) -> dict[str, Any]:
             "DIES_AT_COST_3",
             "EDGE_ON_RANDOM_WALK",
             "WALKFORWARD_WEAK",
+            "BOOTSTRAP_CI_NONPOSITIVE",
         }
+        proxy = "PROXY_NOT_DATED_FUTURES" in flags
         if any(any(f.startswith(x) or f == x for x in fatal) for f in flags):
-            verdict = "FALSIFIED"
+            verdict = "FALSIFIED_ON_PROXY" if proxy else "FALSIFIED"
             why = (
                 "The frozen baseline does not retain economically meaningful "
                 "expectancy after the adversarial battery (see flags)."
             )
+            if proxy:
+                why += (
+                    " This dataset is a public continuous/CFD proxy — not dated "
+                    "CME contracts — so a fail here is evidence against the "
+                    "price-path story, not a fill-model claim."
+                )
             smallest = None
         else:
-            verdict = "SURVIVES_PROVISIONALLY"
+            verdict = "SURVIVES_PROVISIONALLY_ON_PROXY" if proxy else "SURVIVES_PROVISIONALLY"
             why = (
                 "Expectancy stayed positive through costs, neighbors, walk-forward, "
                 "and holdout. This is not proof. Inspect concentration, regime "
                 "slices, and the smallest parameter region next."
             )
+            if proxy:
+                why += (
+                    " Survival on a Yahoo/Dukascopy proxy is still not a futures "
+                    "trading claim: no dated rolls, no micro liquidity, no CME tape."
+                )
             smallest = (
                 "Continuation after compressed range + high-energy close through "
                 "the excluded-current-bar boundary, micros only, 1-tick slippage."
@@ -245,6 +280,26 @@ def render_markdown(summary: dict[str, Any], conclusion: dict[str, Any]) -> str:
                 f"- fold {f['fold']}: train exp={f['train']['expectancy']:.4f} "
                 f"(n={f['train']['n']}) → test exp={f['test']['expectancy']:.4f} (n={f['test']['n']})"
             )
+    base_case = next(
+        (c for c in summary.get("cases", []) if str(c.get("name", "")).startswith("baseline")),
+        None,
+    )
+    if base_case and base_case.get("bootstrap"):
+        b = base_case["bootstrap"]
+        lines += [
+            "",
+            "## Bootstrap (IID trade resample of baseline)",
+            "",
+            f"- mean={b.get('mean')}  95% CI=[{b.get('ci_low')}, {b.get('ci_high')}]  "
+            f"P(mean>0)={b.get('p_positive')}  t={b.get('t_stat')}",
+        ]
+    if base_case and base_case.get("segments"):
+        lines += ["", "## Baseline segments", ""]
+        for name, row in base_case["segments"].items():
+            if isinstance(row, dict) and "n" in row:
+                lines.append(
+                    f"- `{name}`: n={row['n']} exp={row.get('expectancy')} net={row.get('net')}"
+                )
     holdout = summary.get("holdout")
     if holdout:
         lines += [

@@ -48,6 +48,8 @@ class FRSStrategy:
         self.energy_threshold = float(signal["energy_threshold"])
         self.exclude_current = bool(signal.get("exclude_current_bar", True))
         self.series = signal.get("series", "continuous_backward_ratio")
+        self.kind = str(signal.get("kind", "continuation"))
+        self.boundary = str(signal.get("boundary", "rolling_n"))
         self.entry_start = _parse_time(session["entry_start"])
         self.entry_cutoff = _parse_time(session["entry_cutoff"])
         self.force_flat_time = _parse_time(session["force_flat"])
@@ -57,7 +59,10 @@ class FRSStrategy:
         self.sizing_cfg = cfg["sizing"]
         self.pairs = list(cfg["execution"]["pairs"])
 
+        # Prior-session / overnight boundaries need more than one ATR window.
         maxlen = self.long_atr_period + 2
+        if self.boundary in {"prior_session", "overnight"}:
+            maxlen = max(maxlen, 400)
         self.states: dict[str, MarketState] = {}
         self.state_by_signal: dict[str, MarketState] = {}
         self.state_by_trade: dict[str, MarketState] = {}
@@ -129,6 +134,8 @@ class FRSStrategy:
             energy_threshold=self.energy_threshold,
             bar_count=st.bar_count,
             exclude_current_bar=self.exclude_current,
+            kind=self.kind,
+            boundary=self.boundary,
         )
         if cand is not None and not self.in_entry_window(bar.ts):
             self.rejected_log.append(
@@ -246,6 +253,8 @@ class FRSStrategy:
             "direction": candidate.direction,
             "signal_ts": candidate.ts.isoformat(),
             "definition_id": self.definition_id,
+            "kind": candidate.kind,
+            "boundary": candidate.boundary,
         }
 
     def clear_position_state(self) -> None:

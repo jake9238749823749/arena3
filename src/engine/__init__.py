@@ -1,6 +1,6 @@
 """Deterministic event-driven execution engine."""
 
-ENGINE_VERSION = "0.1.0"
+ENGINE_VERSION = "0.2.0"
 
 from engine.clock import Clock, LookAheadError
 from engine.engine import Engine

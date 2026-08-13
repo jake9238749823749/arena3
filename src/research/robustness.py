@@ -274,6 +274,8 @@ def run_suite(
                 "max_drawdown": c.metrics["max_drawdown"],
                 "concentration_top5_of_wins": c.metrics["concentration_top5_of_wins"],
                 "ambiguous_fraction": c.metrics["ambiguous_fraction"],
+                "bootstrap": c.metrics.get("bootstrap"),
+                "segments": c.metrics.get("segments"),
             }
             for c in cases
         ],

@@ -28,7 +28,7 @@ from research.metrics import compute_metrics, segment_trades, trade_frame
 from strategy.frs import FRSStrategy
 
 NY = ZoneInfo("America/New_York")
-ENGINE_VERSION = "0.1.0"
+ENGINE_VERSION = "0.2.0"
 
 
 def git_commit(root: Path) -> str:
@@ -270,7 +270,12 @@ def load_or_synth_bars(
         reuse = False
         if existing and meta_path.exists():
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            reuse = meta.get("seed") == seed and meta.get("scenario") == dataset
+            reuse = (
+                meta.get("seed") == seed
+                and meta.get("scenario") == dataset
+                and meta.get("start") == start
+                and meta.get("end") == end
+            )
         if not reuse:
             synthesize(
                 start=start,
@@ -283,9 +288,16 @@ def load_or_synth_bars(
             )
         bars = load_bars_parquet(parquet_root)
         return bars, hash_parquet_files(parquet_root), str(parquet_root)
-    if dataset in {"raw", "vendor"}:
+    if dataset in {"raw", "vendor", "yahoo_1h", "yahoo_30m", "dukascopy_m30"}:
+        if dataset in {"yahoo_1h", "yahoo_30m", "dukascopy_m30"}:
+            parquet_root = root / "data" / "parquet" / dataset
+            have = list(parquet_root.glob("*.parquet")) if parquet_root.exists() else []
+            if not have:
+                from data.fetch_market import fetch_and_store
+
+                fetch_and_store(dataset, repo=root, registry=registry, start=start, end=end)
         if not parquet_root.exists():
-            raise FileNotFoundError(f"vendor parquet not found at {parquet_root}; run frs ingest first")
+            raise FileNotFoundError(f"vendor parquet not found at {parquet_root}; run frs ingest or frs fetch")
         return load_bars_parquet(parquet_root), hash_parquet_files(parquet_root), str(parquet_root)
     # Treat dataset as a path.
     path = Path(dataset)
@@ -332,4 +344,5 @@ def run_backtest(
     metrics = compute_metrics(
         result.trades, result.equity, starting_cash=float(cfg["account"]["starting_cash"])
     )
+    metrics["segments"] = segment_trades(result.trades)
     return result, dest, metrics

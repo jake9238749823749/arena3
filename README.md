@@ -113,6 +113,14 @@ frs backtest --scenario baseline
 # cost, delay, parameter, roll, and walk-forward battery
 frs robustness --suite standard
 
+# harder battery: costs + reversal / prior-session / overnight defs + holdout
+frs robustness --suite hard --dataset random_walk --start 2020-01-01 --end 2023-12-31
+
+# public continuous/CFD proxies (NOT dated CME contracts)
+pip install yfinance
+frs fetch --source yahoo_1h
+frs robustness --suite hard --dataset yahoo_1h
+
 # render the latest (or named) run report
 frs report --run latest
 ```
@@ -134,6 +142,11 @@ the **smallest defensible version** of the mechanism that remains.
 
 This stack ships a synthetic generator so the engine, accounting, and
 research pipeline are testable without proprietary CME history. Synthetic
-markets cannot accept or reject FRS in the real world. Point `data/raw/` at
-dated contract bars (see `src/data/ingest.py`) to run the same battery on
-actual GC/ES/NQ and MGC/MES/MNQ.
+markets cannot accept or reject FRS in the real world.
+
+`frs fetch` can pull Yahoo continuous futures or Dukascopy spot/index
+CFDs as **proxies**. They are not dated CME contracts. Drop vendor dated
+contract bars into `data/raw/` and run `frs ingest` for the measurement
+that would actually settle the hypothesis.
+
+See `RESEARCH.md` for the current scientific record.

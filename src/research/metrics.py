@@ -127,6 +127,7 @@ def compute_metrics(
     comm = float(sum(t.commission for t in trades))
     slip = float(sum(t.slippage_paid for t in trades))
     final_eq = float(eq[-1]) if len(eq) else starting_cash
+    boot = bootstrap_expectancy(pnls)
 
     return {
         "n_trades": n,
@@ -158,6 +159,34 @@ def compute_metrics(
         "by_instrument": {k: dict(v) for k, v in sorted(by_inst.items())},
         "by_direction": {k: dict(v) for k, v in by_dir.items()},
         "by_exit_reason": {k: dict(v) for k, v in by_reason.items()},
+        "bootstrap": boot,
+    }
+
+
+def bootstrap_expectancy(pnls: list[float], n: int = 2000, seed: int = 42) -> dict[str, Any]:
+    """IID trade-resample CI. Does not fix serial dependence; lower bound on uncertainty."""
+    arr = np.asarray(pnls, dtype=float)
+    if len(arr) < 5:
+        return {
+            "n_boot": 0,
+            "mean": float(arr.mean()) if len(arr) else 0.0,
+            "ci_low": None,
+            "ci_high": None,
+            "p_positive": None,
+            "t_stat": None,
+        }
+    rng = np.random.default_rng(seed)
+    samples = rng.choice(arr, size=(n, len(arr)), replace=True).mean(axis=1)
+    mean = float(arr.mean())
+    sd = float(arr.std(ddof=1))
+    t_stat = mean / (sd / math.sqrt(len(arr))) if sd > 0 else 0.0
+    return {
+        "n_boot": n,
+        "mean": mean,
+        "ci_low": float(np.percentile(samples, 2.5)),
+        "ci_high": float(np.percentile(samples, 97.5)),
+        "p_positive": float(np.mean(samples > 0)),
+        "t_stat": t_stat,
     }
 
 
@@ -186,4 +215,21 @@ def segment_trades(trades: list[Trade]) -> dict[str, Any]:
     mid_e = [t for t in trades if 0.65 <= abs(float(t.signal_meta.get("energy") or 0)) < 0.8]
     out["energy_high"] = _agg(high_e)
     out["energy_mid"] = _agg(mid_e)
+    comps = [float(t.signal_meta.get("compression") or 0) for t in trades]
+    if comps:
+        q1, q2 = np.quantile(comps, [0.33, 0.67])
+        out["compression_low"] = _agg([t for t, c in zip(trades, comps) if c <= q1])
+        out["compression_mid"] = _agg([t for t, c in zip(trades, comps) if q1 < c <= q2])
+        out["compression_high"] = _agg([t for t, c in zip(trades, comps) if c > q2])
+    # Session slice by entry hour in America/New_York.
+    def _hour(t: Trade) -> int:
+        ts = t.entry_ts
+        if getattr(ts, "tzinfo", None) is not None:
+            from zoneinfo import ZoneInfo
+
+            ts = ts.astimezone(ZoneInfo("America/New_York"))
+        return int(ts.hour)
+
+    out["entry_0930_1100"] = _agg([t for t in trades if 9 <= _hour(t) < 11])
+    out["entry_1100_1300"] = _agg([t for t in trades if 11 <= _hour(t) < 13])
     return out
