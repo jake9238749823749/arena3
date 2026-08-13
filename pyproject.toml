@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frs-research"
+version = "0.1.0"
+description = "Falsification-first research stack for the Frontier Resolution Switch futures hypothesis"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "FRS Research" }]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "polars>=1.0",
+  "pyarrow>=14.0",
+  "duckdb>=0.10",
+  "pyyaml>=6.0",
+  "pandas-market-calendars>=4.3",
+  "python-dateutil>=2.8",
+  "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=4.1",
+  "hypothesis>=6.100",
+]
+
+[project.scripts]
+frs = "research.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+markers = [
+  "slow: longer integration or robustness runs",
+  "lookahead: tests that prove absence of future information",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

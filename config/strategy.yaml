@@ -1,0 +1,82 @@
+# Frozen baseline FRS definition.
+# Changing these values is a new hypothesis — bump definition_id.
+definition_id: frs_baseline_v1
+engine_version: "0.1.0"
+description: >
+  QuantConnect-ported Frontier Resolution Switch. Compression (stored energy)
+  plus a high-|E| close through a prior-N-bar boundary is treated as
+  resolution-as-continuation. Cross-asset snooped predictors are excluded.
+
+account:
+  starting_cash: 100000.0
+  currency: USD
+  timezone: America/New_York
+  max_positions: 1
+
+session:
+  entry_start: "09:30"
+  entry_cutoff: "13:00"
+  force_flat: "15:45"
+  # Bars whose close time is used as the signal timestamp.
+
+signal:
+  bar_minutes: 30
+  # continuous_backward_ratio | front_contract
+  series: continuous_backward_ratio
+  boundary_lookback: 12
+  short_atr_period: 6
+  long_atr_period: 48
+  compression_threshold: 0.75
+  energy_threshold: 0.65
+  # Exclude the forming/breakout bar from ATR and boundary inputs.
+  exclude_current_bar: true
+
+execution:
+  # Signals from GC/ES/NQ; fills on the mapped micro.
+  pairs:
+    - name: GC
+      signal: GC
+      trade: MGC
+    - name: ES
+      signal: ES
+      trade: MES
+    - name: NQ
+      signal: NQ
+      trade: MNQ
+  # next_bar: fill at the next bar open (conservative on 30m data).
+  # next_event: fill on the next market-data event of any resolution.
+  delay: next_bar
+  signal_to_fill_bars: 1
+  # Market orders: adverse ticks added to the fill price.
+  slippage_ticks: 1
+  # worst_case | mark_ambiguous | both_paths
+  intrabar_ambiguity: worst_case
+  # Limit targets fill if touched, at the limit, no improvement.
+  limit_fill_on_touch: true
+  # Stops that gap through fill at worse(open, stop) + slippage.
+  stop_gap_policy: worse_of_open_and_stop
+
+exits:
+  stop_atr: 1.0
+  target_atr: 2.0
+  max_hold_bars: 8
+  flatten_on_roll: true
+
+sizing:
+  # fixed_contracts | fixed_dollar_risk | percent_equity_risk | vol_normalized
+  method: percent_equity_risk
+  risk_fraction: 0.0025
+  notional_cap: 1.0
+  fixed_contracts: 1
+  fixed_dollar_risk: 250.0
+  vol_target_annual: 0.10
+
+research:
+  warmup_days: 10
+  holdout_fraction: 0.20
+  # Last holdout_fraction of the timeline is reserved. Optimization must not use it.
+  walkforward:
+    train_days: 180
+    test_days: 90
+    step_days: 90
+  seed: 42

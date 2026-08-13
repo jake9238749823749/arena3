@@ -1,0 +1,133 @@
+# Research scenarios. The holdout window is computed from the data span and is
+# never used for parameter selection.
+
+dataset:
+  # random_walk | planted_frs | raw (vendor parquet under data/parquet)
+  default: random_walk
+  start: "2021-01-01"
+  end: "2022-12-31"
+  holdout_fraction: 0.20
+
+suites:
+  quick:
+    - baseline
+    - cost_0
+    - cost_2
+    - cost_3
+    - holdout
+  standard:
+    - baseline
+    - cost_0
+    - cost_1
+    - cost_2
+    - cost_3
+    - cost_5
+    - cost_3x_commission
+    - delay_2bars
+    - delay_3bars
+    - roll_scheduled_5d
+    - roll_scheduled_10d
+    - signal_front_contract
+    - oat_energy
+    - oat_compression
+    - oat_stop
+    - oat_target
+    - oat_lookback
+    - walkforward
+    - holdout
+
+scenarios:
+  baseline:
+    description: Frozen FRS definition, 1-tick slippage, listed commissions
+    inherits: strategy
+    execution:
+      slippage_ticks: 1
+    research:
+      seed: 42
+
+  cost_0:
+    description: Zero slippage (optimistic bound, not a claim)
+    execution:
+      slippage_ticks: 0
+
+  cost_1:
+    description: One adverse tick (canonical conservative default)
+    execution:
+      slippage_ticks: 1
+
+  cost_2:
+    description: Two adverse ticks
+    execution:
+      slippage_ticks: 2
+
+  cost_3:
+    description: Three adverse ticks
+    execution:
+      slippage_ticks: 3
+
+  cost_5:
+    description: Five adverse ticks (stress)
+    execution:
+      slippage_ticks: 5
+
+  cost_3x_commission:
+    description: Listed commissions times three, 1-tick slippage
+    execution:
+      slippage_ticks: 1
+    commission_multiplier: 3.0
+
+  delay_2bars:
+    description: Extra bar of delay after the signal bar
+    execution:
+      signal_to_fill_bars: 2
+
+  delay_3bars:
+    description: Two extra bars of delay after the signal bar
+    execution:
+      signal_to_fill_bars: 3
+
+  roll_scheduled_5d:
+    description: Roll 5 days before expiry
+    roll_days_before_expiry: 5
+
+  roll_scheduled_10d:
+    description: Roll 10 days before expiry
+    roll_days_before_expiry: 10
+
+  signal_front_contract:
+    description: Signals from unadjusted front contract rather than backward-ratio
+    signal:
+      series: front_contract
+
+  oat_energy:
+    description: One-at-a-time energy threshold neighbors
+    grid:
+      signal.energy_threshold: [0.55, 0.60, 0.65, 0.70, 0.75]
+
+  oat_compression:
+    description: One-at-a-time compression threshold neighbors
+    grid:
+      signal.compression_threshold: [0.60, 0.70, 0.75, 0.80, 0.90]
+
+  oat_stop:
+    description: One-at-a-time stop ATR neighbors
+    grid:
+      exits.stop_atr: [0.75, 1.0, 1.25, 1.5]
+
+  oat_target:
+    description: One-at-a-time target ATR neighbors
+    grid:
+      exits.target_atr: [1.25, 1.5, 2.0, 2.5, 3.0]
+
+  oat_lookback:
+    description: One-at-a-time boundary lookback neighbors
+    grid:
+      signal.boundary_lookback: [8, 10, 12, 16, 20]
+
+  walkforward:
+    description: Chronological walk-forward on the in-sample span only
+    mode: walkforward
+
+  holdout:
+    description: Single evaluation on the reserved final holdout
+    mode: holdout

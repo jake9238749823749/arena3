@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.tox/
+
+# Research artifacts (keep directory structure)
+data/raw/**
+data/parquet/**
+runs/**
+!data/raw/.gitkeep
+!data/parquet/.gitkeep
+!runs/.gitkeep
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Local secrets
+.env
+.env.*

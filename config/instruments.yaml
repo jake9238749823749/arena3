@@ -1,0 +1,129 @@
+# CME/COMEX specs used by the engine. Prices are quoted in index points / USD per oz.
+# tick_value MUST equal multiplier * tick_size. Tests enforce this.
+#
+# GC/MGC, ES/MES, NQ/MNQ are separate instruments: separate streams, multipliers,
+# liquidity assumptions, contracts, and roll state.
+
+timezone: America/New_York
+
+# Globex-style session: Sunday 18:00 ET through Friday 17:00 ET, daily break 17:00–18:00.
+globex:
+  weekday_open: "18:00"
+  weekday_close: "17:00"
+  daily_break_start: "17:00"
+  daily_break_end: "18:00"
+  week_open_weekday: Sunday
+  week_open: "18:00"
+  week_close_weekday: Friday
+  week_close: "17:00"
+
+instruments:
+  GC:
+    name: Gold
+    exchange: COMEX
+    asset_class: metal
+    role: signal
+    currency: USD
+    multiplier: 100.0
+    tick_size: 0.10
+    tick_value: 10.0
+    contract_months: [G, J, M, Q, V, Z]
+    cycle: bimonthly
+    settlement: physical
+    rth_start: "08:20"
+    rth_end: "13:30"
+    commission_per_side: 2.50
+    related_micro: MGC
+
+  MGC:
+    name: Micro Gold
+    exchange: COMEX
+    asset_class: metal
+    role: trade
+    currency: USD
+    multiplier: 10.0
+    tick_size: 0.10
+    tick_value: 1.0
+    contract_months: [G, J, M, Q, V, Z]
+    cycle: bimonthly
+    settlement: financial
+    rth_start: "08:20"
+    rth_end: "13:30"
+    commission_per_side: 0.50
+    related_full: GC
+
+  ES:
+    name: E-mini S&P 500
+    exchange: CME
+    asset_class: index
+    role: signal
+    currency: USD
+    multiplier: 50.0
+    tick_size: 0.25
+    tick_value: 12.50
+    contract_months: [H, M, U, Z]
+    cycle: quarterly
+    settlement: financial
+    rth_start: "09:30"
+    rth_end: "16:00"
+    commission_per_side: 2.25
+    related_micro: MES
+
+  MES:
+    name: Micro E-mini S&P 500
+    exchange: CME
+    asset_class: index
+    role: trade
+    currency: USD
+    multiplier: 5.0
+    tick_size: 0.25
+    tick_value: 1.25
+    contract_months: [H, M, U, Z]
+    cycle: quarterly
+    settlement: financial
+    rth_start: "09:30"
+    rth_end: "16:00"
+    commission_per_side: 0.62
+    related_full: ES
+
+  NQ:
+    name: E-mini Nasdaq-100
+    exchange: CME
+    asset_class: index
+    role: signal
+    currency: USD
+    multiplier: 20.0
+    tick_size: 0.25
+    tick_value: 5.0
+    contract_months: [H, M, U, Z]
+    cycle: quarterly
+    settlement: financial
+    rth_start: "09:30"
+    rth_end: "16:00"
+    commission_per_side: 2.25
+    related_micro: MNQ
+
+  MNQ:
+    name: Micro E-mini Nasdaq-100
+    exchange: CME
+    asset_class: index
+    role: trade
+    currency: USD
+    multiplier: 2.0
+    tick_size: 0.25
+    tick_value: 0.50
+    contract_months: [H, M, U, Z]
+    cycle: quarterly
+    settlement: financial
+    rth_start: "09:30"
+    rth_end: "16:00"
+    commission_per_side: 0.62
+    related_full: NQ
+
+rolls:
+  # Days before expiration to roll when using the scheduled calendar.
+  scheduled_days_before_expiry: 8
+  # volume | open_interest | scheduled
+  default_policy: scheduled
+  # Never apply continuous-adjustment gaps to execution prices.
+  execution_uses_dated_contracts: true
