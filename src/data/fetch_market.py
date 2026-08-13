@@ -299,6 +299,11 @@ def fetch_and_store(
         e = datetime.fromisoformat(end or "2024-12-31").date()
         frames = fetch_dukascopy_m30(s, e)
         label = "dukascopy_m30"
+    elif source == "stooq_daily":
+        from data.stooq import fetch_stooq_daily
+
+        frames = fetch_stooq_daily()
+        label = "stooq_daily"
     else:
         raise ValueError(f"unknown market source {source!r}")
     stamped = frames_to_bars(frames, source=label, registry=registry)

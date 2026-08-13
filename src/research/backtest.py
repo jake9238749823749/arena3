@@ -28,7 +28,7 @@ from research.metrics import compute_metrics, segment_trades, trade_frame
 from strategy.frs import FRSStrategy
 
 NY = ZoneInfo("America/New_York")
-ENGINE_VERSION = "0.2.0"
+ENGINE_VERSION = "0.3.0"
 
 
 def git_commit(root: Path) -> str:
@@ -196,6 +196,9 @@ def write_run_dir(
     )
     metrics["segments"] = segment_trades(result.trades)
     metrics["final_snapshot"] = result.final_snapshot
+    from research.opportunity import analyze_rejected
+
+    metrics["opportunity"] = analyze_rejected(result.rejected_signals, result.trades)
     (dest / "metrics.json").write_text(json.dumps(metrics, indent=2, default=str), encoding="utf-8")
     (dest / "conclusion.md").write_text(_single_run_conclusion(scenario_name, metrics, meta), encoding="utf-8")
     return dest
@@ -288,8 +291,8 @@ def load_or_synth_bars(
             )
         bars = load_bars_parquet(parquet_root)
         return bars, hash_parquet_files(parquet_root), str(parquet_root)
-    if dataset in {"raw", "vendor", "yahoo_1h", "yahoo_30m", "dukascopy_m30"}:
-        if dataset in {"yahoo_1h", "yahoo_30m", "dukascopy_m30"}:
+    if dataset in {"raw", "vendor", "yahoo_1h", "yahoo_30m", "dukascopy_m30", "stooq_daily"}:
+        if dataset in {"yahoo_1h", "yahoo_30m", "dukascopy_m30", "stooq_daily"}:
             parquet_root = root / "data" / "parquet" / dataset
             have = list(parquet_root.glob("*.parquet")) if parquet_root.exists() else []
             if not have:
@@ -345,4 +348,7 @@ def run_backtest(
         result.trades, result.equity, starting_cash=float(cfg["account"]["starting_cash"])
     )
     metrics["segments"] = segment_trades(result.trades)
+    from research.opportunity import analyze_rejected
+
+    metrics["opportunity"] = analyze_rejected(result.rejected_signals, result.trades)
     return result, dest, metrics

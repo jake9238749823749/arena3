@@ -2,7 +2,7 @@
 # never used for parameter selection.
 
 dataset:
-  # random_walk | planted_frs | yahoo_1h | yahoo_30m | dukascopy_m30 | raw
+  # random_walk | planted_frs | yahoo_1h | yahoo_30m | dukascopy_m30 | stooq_daily | raw
   default: random_walk
   start: "2021-01-01"
   end: "2022-12-31"
@@ -29,6 +29,14 @@ suites:
     - oat_energy
     - walkforward
     - holdout
+  # Phase-3: pre-registered tighter gate + optimistic OCO + both holdouts.
+  # morning_highE was motivated by planted IS slices — only its HOLDOUT is confirmatory.
+  phase3:
+    - baseline
+    - morning_highE
+    - target_first
+    - holdout
+    - holdout_morning_highE
   standard:
     - baseline
     - cost_0
@@ -165,3 +173,32 @@ scenarios:
     signal:
       kind: continuation
       boundary: overnight
+
+  morning_highE:
+    description: >
+      PRE-REGISTERED after phase-2 slices, not a silent baseline edit.
+      E>=0.80 and entries 09:30-11:00 only. Planted IS is contaminated by
+      peeking; GBM IS and planted HOLDOUT are the honest tests.
+    definition_id: frs_morning_highE_v1
+    session:
+      entry_start: "09:30"
+      entry_cutoff: "11:00"
+    signal:
+      kind: continuation
+      energy_threshold: 0.80
+
+  target_first:
+    description: Sensitivity — if both stop and target print, fill the target (optimistic)
+    execution:
+      intrabar_ambiguity: target_first
+
+  holdout_morning_highE:
+    description: Confirmatory holdout of frs_morning_highE_v1
+    mode: holdout
+    definition_id: frs_morning_highE_v1
+    session:
+      entry_start: "09:30"
+      entry_cutoff: "11:00"
+    signal:
+      kind: continuation
+      energy_threshold: 0.80

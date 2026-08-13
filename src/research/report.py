@@ -94,7 +94,7 @@ def conclude_from_suite(summary: dict[str, Any]) -> dict[str, Any]:
         flags.append("EDGE_ON_RANDOM_WALK")
     if dataset in {"random_walk", "planted_frs"}:
         flags.append("SYNTHETIC_DATA_ONLY")
-    if dataset in {"yahoo_1h", "yahoo_30m", "dukascopy_m30"} or str(dataset).startswith("yahoo") or str(dataset).startswith("dukascopy"):
+    if dataset in {"yahoo_1h", "yahoo_30m", "dukascopy_m30", "stooq_daily"} or str(dataset).startswith("yahoo") or str(dataset).startswith("dukascopy") or str(dataset).startswith("stooq"):
         flags.append("PROXY_NOT_DATED_FUTURES")
     boot = baseline.get("bootstrap") or {}
     if boot.get("ci_high") is not None and float(boot["ci_high"]) <= 0:
@@ -292,6 +292,15 @@ def render_markdown(summary: dict[str, Any], conclusion: dict[str, Any]) -> str:
             "",
             f"- mean={b.get('mean')}  95% CI=[{b.get('ci_low')}, {b.get('ci_high')}]  "
             f"P(mean>0)={b.get('p_positive')}  t={b.get('t_stat')}",
+        ]
+    if summary.get("multiple_testing"):
+        mt = summary["multiple_testing"]
+        lines += [
+            "",
+            "## Multiple testing (deflated Sharpe of the best IS case)",
+            "",
+            f"- inspected={mt.get('n_inspected')} best=`{mt.get('best_case')}` "
+            f"SR={mt.get('best_sharpe')} deflated={mt.get('deflated')}",
         ]
     if base_case and base_case.get("segments"):
         lines += ["", "## Baseline segments", ""]

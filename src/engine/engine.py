@@ -412,9 +412,19 @@ class Engine:
             self._maybe_force_flat(ts)
             self._maybe_rolls(ts)
             if ts in grouped:
-                for bar in grouped[ts]:
+                bars_here = grouped[ts]
+                trade_bars = [b for b in bars_here if b.instrument in self.strategy.state_by_trade]
+                signal_bars = [b for b in bars_here if b.instrument in self.strategy.state_by_signal]
+                other = [
+                    b
+                    for b in bars_here
+                    if b.instrument not in self.strategy.state_by_trade
+                    and b.instrument not in self.strategy.state_by_signal
+                ]
+                # Dated trade bars first so fills/marks precede new signals.
+                for bar in trade_bars + other + signal_bars:
                     self._process_bar(bar)
-                self._log(EventType.BAR, {"n": len(grouped[ts])}, ts.isoformat())
+                self._log(EventType.BAR, {"n": len(bars_here)}, ts.isoformat())
             reason = self.strategy.time_stop_due()
             if reason:
                 self.request_exit(reason, ts)

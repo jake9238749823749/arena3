@@ -259,38 +259,43 @@ class Broker:
             if len(stops) == 1 and len(limits) == 1:
                 stop, target = stops[0], limits[0]
                 if both_touched(stop, target, bar):
-                    if self.config.intrabar_ambiguity in {"worst_case", "mark_ambiguous", "both_paths"}:
-                        # Worst-case path: stop fills, target canceled.
-                        # ``both_paths`` is handled by the robustness runner
-                        # cloning the engine; this instance still takes stop.
-                        same_bar_ok = bool(stop.meta.get("protect_entry_bar")) and bar.ts == stop.submitted_ts
-                        delay_ok = stop.bars_seen >= stop.min_bars_before_fill and bar.ts > stop.submitted_ts
-                        if delay_ok or same_bar_ok:
-                            dec = match_order(
-                                stop,
-                                bar,
-                                self.specs[stop.instrument],
-                                slippage_ticks=self.config.slippage_ticks,
-                                limit_fill_on_touch=self.config.limit_fill_on_touch,
-                                stop_gap_policy=self.config.stop_gap_policy,
+                    policy = self.config.intrabar_ambiguity
+                    # worst_case / stop_first / both_paths / mark_ambiguous → stop
+                    # target_first → optimistic path, used only as a sensitivity
+                    winner = target if policy == "target_first" else stop
+                    same_bar_ok = bool(winner.meta.get("protect_entry_bar")) and bar.ts == winner.submitted_ts
+                    delay_ok = winner.bars_seen >= winner.min_bars_before_fill and bar.ts > winner.submitted_ts
+                    if delay_ok or same_bar_ok:
+                        dec = match_order(
+                            winner,
+                            bar,
+                            self.specs[winner.instrument],
+                            slippage_ticks=self.config.slippage_ticks,
+                            limit_fill_on_touch=self.config.limit_fill_on_touch,
+                            stop_gap_policy=self.config.stop_gap_policy,
+                        )
+                        if dec.fills:
+                            reason = (
+                                "oco_target_first"
+                                if winner is target
+                                else "oco_worst_case_stop"
                             )
-                            if dec.fills:
-                                fill = self._make_fill(
-                                    stop,
-                                    bar,
-                                    dec.price,
-                                    "oco_worst_case_stop",
-                                    dec.slippage_ticks,
-                                    dec.liquidity,
-                                    True,
-                                )
-                                produced.append(fill)
-                                self.portfolio.mark_ambiguous(stop.instrument)
-                                self._emit(fill, stop)
-                                self.cancel_oco_group(group, stop.order_id, "OCO sibling canceled")
-                                handled.add(stop.order_id)
-                                handled.add(target.order_id)
-                                continue
+                            fill = self._make_fill(
+                                winner,
+                                bar,
+                                dec.price,
+                                reason,
+                                dec.slippage_ticks,
+                                dec.liquidity,
+                                True,
+                            )
+                            produced.append(fill)
+                            self.portfolio.mark_ambiguous(winner.instrument)
+                            self._emit(fill, winner)
+                            self.cancel_oco_group(group, winner.order_id, "OCO sibling canceled")
+                            handled.add(stop.order_id)
+                            handled.add(target.order_id)
+                            continue
 
         remaining = [o for o in relevant if o.order_id not in handled and o.is_working]
         remaining.sort(key=lambda o: (o.submitted_ts, o.order_id))

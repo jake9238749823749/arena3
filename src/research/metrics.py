@@ -128,6 +128,9 @@ def compute_metrics(
     slip = float(sum(t.slippage_paid for t in trades))
     final_eq = float(eq[-1]) if len(eq) else starting_cash
     boot = bootstrap_expectancy(pnls)
+    block = block_bootstrap_expectancy(pnls)
+    perm = permutation_expectancy(pnls)
+    edge = excursion_stats(trades)
 
     return {
         "n_trades": n,
@@ -160,6 +163,9 @@ def compute_metrics(
         "by_direction": {k: dict(v) for k, v in by_dir.items()},
         "by_exit_reason": {k: dict(v) for k, v in by_reason.items()},
         "bootstrap": boot,
+        "block_bootstrap": block,
+        "permutation": perm,
+        "excursions": edge,
     }
 
 
@@ -188,6 +194,138 @@ def bootstrap_expectancy(pnls: list[float], n: int = 2000, seed: int = 42) -> di
         "p_positive": float(np.mean(samples > 0)),
         "t_stat": t_stat,
     }
+
+
+def block_bootstrap_expectancy(
+    pnls: list[float],
+    *,
+    block: int = 5,
+    n: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Moving-block bootstrap of trade expectancy. Respects short serial runs."""
+    arr = np.asarray(pnls, dtype=float)
+    if len(arr) < max(8, block * 2):
+        return {"n_boot": 0, "block": block, "mean": float(arr.mean()) if len(arr) else 0.0, "ci_low": None, "ci_high": None, "p_positive": None}
+    rng = np.random.default_rng(seed)
+    length = len(arr)
+    starts = np.arange(0, length - block + 1)
+    samples = []
+    n_blocks = int(math.ceil(length / block))
+    for _ in range(n):
+        chosen = rng.choice(starts, size=n_blocks, replace=True)
+        concat = np.concatenate([arr[s : s + block] for s in chosen])[:length]
+        samples.append(float(concat.mean()))
+    samples_a = np.asarray(samples)
+    return {
+        "n_boot": n,
+        "block": block,
+        "mean": float(arr.mean()),
+        "ci_low": float(np.percentile(samples_a, 2.5)),
+        "ci_high": float(np.percentile(samples_a, 97.5)),
+        "p_positive": float(np.mean(samples_a > 0)),
+    }
+
+
+def permutation_expectancy(pnls: list[float], n: int = 2000, seed: int = 42) -> dict[str, Any]:
+    """Two-sided p-value under random sign flips (no edge null)."""
+    arr = np.asarray(pnls, dtype=float)
+    if len(arr) < 5:
+        return {"n_perm": 0, "observed": float(arr.mean()) if len(arr) else 0.0, "p_value": None}
+    rng = np.random.default_rng(seed)
+    obs = float(arr.mean())
+    signs = rng.choice(np.array([-1.0, 1.0]), size=(n, len(arr)))
+    null = (arr * signs).mean(axis=1)
+    p = float(np.mean(np.abs(null) >= abs(obs)))
+    return {"n_perm": n, "observed": obs, "p_value": p}
+
+
+def excursion_stats(trades: list[Trade]) -> dict[str, Any]:
+    """MAE / MFE / edge ratio. Edge = median(MFE / |MAE|) on trades with MAE < 0."""
+    if not trades:
+        return {"n": 0, "mean_mae": 0.0, "mean_mfe": 0.0, "median_edge_ratio": None, "median_capture": None}
+    maes = np.array([t.mae for t in trades], dtype=float)
+    mfes = np.array([t.mfe for t in trades], dtype=float)
+    pnls = np.array([t.pnl for t in trades], dtype=float)
+    ratios = []
+    captures = []
+    for mae, mfe, pnl in zip(maes, mfes, pnls):
+        if mae < 0:
+            ratios.append(mfe / abs(mae))
+        if mfe > 0:
+            captures.append(pnl / mfe)
+    return {
+        "n": len(trades),
+        "mean_mae": float(maes.mean()),
+        "mean_mfe": float(mfes.mean()),
+        "median_edge_ratio": float(np.median(ratios)) if ratios else None,
+        "median_capture": float(np.median(captures)) if captures else None,
+    }
+
+
+def deflated_sharpe(
+    sharpe: float,
+    n_obs: int,
+    n_trials: int,
+    *,
+    skew: float = 0.0,
+    kurtosis: float = 3.0,
+) -> dict[str, Any]:
+    """Bailey & López de Prado deflated Sharpe (normal CDF of haircut SR).
+
+    ``n_trials`` is the number of configurations inspected. This is a
+    conservative multiple-testing haircut, not a license to pick the max.
+    """
+    if n_obs < 3 or n_trials < 1 or not math.isfinite(sharpe):
+        return {"sharpe": sharpe, "n_trials": n_trials, "expected_max_sr": None, "deflated_sharpe": None, "prob_skill": None}
+    # Expected max SR under N independent null trials (approx).
+    emc = 0.5772156649
+    expected_max = ((1 - emc) * _norm_ppf(1 - 1.0 / n_trials) + emc * _norm_ppf(1 - 1.0 / (n_trials * math.e))) / math.sqrt(n_obs - 1) if n_trials > 1 else 0.0
+    denom = math.sqrt(
+        max(1e-12, 1.0 - skew * sharpe + ((kurtosis - 1.0) / 4.0) * sharpe * sharpe) / (n_obs - 1)
+    )
+    z = (sharpe - expected_max) / denom
+    return {
+        "sharpe": sharpe,
+        "n_trials": n_trials,
+        "n_obs": n_obs,
+        "expected_max_sr": float(expected_max),
+        "deflated_sharpe": float(z),
+        "prob_skill": float(_norm_cdf(z)),
+    }
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _norm_ppf(p: float) -> float:
+    """Acklam approximation of the standard normal quantile."""
+    if p <= 0.0:
+        return -10.0
+    if p >= 1.0:
+        return 10.0
+    a = [-3.969683028665376e01, 2.209460984245205e02, -2.759285104469687e02, 1.383577518672690e02, -3.066479806614716e01, 2.506628277459239e00]
+    b = [-5.447609879822406e01, 1.615858368580409e02, -1.556989798598866e02, 6.680131188771972e01, -1.328068155288572e01]
+    c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e00, -2.549732539343734e00, 4.374664141464968e00, 2.938163982698783e00]
+    d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e00, 3.754408661907416e00]
+    plow = 0.02425
+    phigh = 1 - plow
+    if p < plow:
+        q = math.sqrt(-2 * math.log(p))
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1
+        )
+    if p > phigh:
+        q = math.sqrt(-2 * math.log(1 - p))
+        return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1
+        )
+    q = p - 0.5
+    r = q * q
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (
+        ((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1
+    )
 
 
 def segment_trades(trades: list[Trade]) -> dict[str, Any]:

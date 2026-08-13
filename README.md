@@ -116,6 +116,11 @@ frs robustness --suite standard
 # harder battery: costs + reversal / prior-session / overnight defs + holdout
 frs robustness --suite hard --dataset random_walk --start 2020-01-01 --end 2023-12-31
 
+# phase 3: pre-registered morning+high-E gate, optimistic OCO, dual holdouts
+frs robustness --suite phase3 --dataset planted_frs --start 2021-01-01 --end 2022-12-31 --seed 7
+frs compose runs/suite_*.json --out runs/COMPOSE.md
+frs analyze --run latest
+
 # public continuous/CFD proxies (NOT dated CME contracts)
 pip install yfinance
 frs fetch --source yahoo_1h

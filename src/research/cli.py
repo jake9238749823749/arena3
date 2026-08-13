@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     p_syn.add_argument("--out", default=None)
 
     p_ft = sub.add_parser("fetch", help="Download public proxy market paths (Yahoo / Dukascopy)")
-    p_ft.add_argument("--source", required=True, choices=["yahoo_1h", "yahoo_30m", "dukascopy_m30"])
+    p_ft.add_argument("--source", required=True, choices=["yahoo_1h", "yahoo_30m", "dukascopy_m30", "stooq_daily"])
     p_ft.add_argument("--start", default="2021-01-01")
     p_ft.add_argument("--end", default="2024-12-31")
 
@@ -53,6 +53,13 @@ def main(argv: list[str] | None = None) -> int:
     p_rep = sub.add_parser("report", help="Render REPORT.md from a suite JSON or the latest suite")
     p_rep.add_argument("--suite-json", default=None)
     p_rep.add_argument("--run", default=None, help="latest | path to a run dir")
+
+    p_co = sub.add_parser("compose", help="Merge several suite JSON files into one memo")
+    p_co.add_argument("suites", nargs="+")
+    p_co.add_argument("--out", default=None)
+
+    p_an = sub.add_parser("analyze", help="Opportunity-cost summary for a run directory")
+    p_an.add_argument("--run", required=True)
 
     args = parser.parse_args(argv)
 
@@ -201,6 +208,36 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print("provide --suite-json or --run", file=sys.stderr)
         return 2
+
+    if args.cmd == "compose":
+        from research.compose import write_compose
+
+        dest = Path(args.out) if args.out else repo_root() / "runs" / "COMPOSE.md"
+        path = write_compose(args.suites, dest)
+        print(path)
+        return 0
+
+    if args.cmd == "analyze":
+        import pandas as pd
+        from research.opportunity import analyze_rejected
+
+        run = Path(args.run)
+        if args.run == "latest":
+            from research.report import _latest_run
+
+            found = _latest_run(repo_root() / "runs")
+            if found is None:
+                print("no runs", file=sys.stderr)
+                return 2
+            run = found
+        rejected_path = run / "rejected_signals.parquet"
+        trades_path = run / "trades.parquet"
+        rejected = pd.read_parquet(rejected_path).to_dict("records") if rejected_path.exists() else []
+        print(json.dumps(analyze_rejected(rejected), indent=2, default=str))
+        if trades_path.exists():
+            t = pd.read_parquet(trades_path)
+            print("trades", len(t), "net", float(t["pnl"].sum()) if len(t) and "pnl" in t.columns else None)
+        return 0
 
     return 2
 

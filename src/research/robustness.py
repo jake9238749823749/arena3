@@ -21,7 +21,7 @@ from typing import Any
 from engine.types import Bar
 from research.backtest import run_backtest, slice_holdout
 from research.configutil import load_scenarios, load_strategy, materialize_scenario, set_path
-from research.metrics import compute_metrics
+from research.metrics import compute_metrics, deflated_sharpe
 
 
 @dataclass
@@ -158,6 +158,7 @@ def run_suite(
     grids: dict[str, list[dict[str, Any]]] = {}
     folds: list[dict[str, Any]] = []
     holdout_metrics: dict[str, Any] | None = None
+    holdouts: list[dict[str, Any]] = []
 
     for name in names:
         body = sc["scenarios"][name]
@@ -176,9 +177,11 @@ def run_suite(
             )
             continue
         if mode == "holdout":
+            holdout_cfg = materialize_scenario(base, body)
+            label = "holdout_" + str(holdout_cfg.get("definition_id") or "baseline")
             cr = run_case(
-                "holdout_baseline",
-                base,
+                label,
+                holdout_cfg,
                 dataset=dataset,
                 start=start,
                 end=end,
@@ -188,7 +191,10 @@ def run_suite(
                 persist=persist,
                 bars=bars,  # full series; run_backtest slices the reserved tail
             )
-            holdout_metrics = cr.metrics
+            # Only the unnamed/frozen holdout feeds the canonical holdout slot.
+            if body.get("definition_id") is None:
+                holdout_metrics = cr.metrics
+            holdouts.append({"name": cr.name, **{k: cr.metrics.get(k) for k in ("n_trades", "expectancy", "net_pnl", "win_rate", "sharpe")}})
             cases.append(cr)
             continue
         grid = body.get("grid")
@@ -283,8 +289,28 @@ def run_suite(
         "grids": grids,
         "walkforward": folds,
         "holdout": holdout_metrics,
+        "holdouts": holdouts,
+        "multiple_testing": _multiple_testing(cases),
     }
     return summary
+
+
+def _multiple_testing(cases: list[CaseResult]) -> dict[str, Any]:
+    """Haircut the *best* IS Sharpe by how many cases we looked at."""
+    inspected = [c for c in cases if c.metrics.get("n_trades", 0) >= 5]
+    if not inspected:
+        return {}
+    best = max(inspected, key=lambda c: float(c.metrics.get("sharpe") or 0.0))
+    return {
+        "n_inspected": len(inspected),
+        "best_case": best.name,
+        "best_sharpe": best.metrics.get("sharpe"),
+        "deflated": deflated_sharpe(
+            float(best.metrics.get("sharpe") or 0.0),
+            int(best.metrics.get("n_trades") or 0),
+            len(inspected),
+        ),
+    }
 
 
 def write_suite_summary(summary: dict[str, Any], path: Path | None = None) -> Path:
